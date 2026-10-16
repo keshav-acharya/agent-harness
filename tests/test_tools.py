@@ -74,3 +74,10 @@ def test_invalid_args_and_unknown_tool(env):
     call, _ = env
     assert call("read_file").is_error      # missing required 'path'
     assert call("nope").is_error
+
+
+def test_bash_does_not_leak_api_keys(env, monkeypatch):
+    call, _ = env
+    monkeypatch.setenv("FAKE_API_KEY", "super-secret")
+    r = call("bash", command='python -c "import os; print(os.environ.get(\'FAKE_API_KEY\'))"')
+    assert "super-secret" not in r.content and "None" in r.content
