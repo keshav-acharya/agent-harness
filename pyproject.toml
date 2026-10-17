@@ -9,6 +9,7 @@ dev = ["pytest", "ruff"]
 
 [project.scripts]
 harness = "harness.cli:main"
+harness-trace = "harness.summarize:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,7 +1,7 @@
 import pytest
 
 from harness.tools import ToolRegistry, default_tools
-from harness.tools.base import ToolContext
+from harness.tools.base import ToolContext, truncate
 from harness.types import ToolCall
 
 
@@ -81,3 +81,10 @@ def test_bash_does_not_leak_api_keys(env, monkeypatch):
     monkeypatch.setenv("FAKE_API_KEY", "super-secret")
     r = call("bash", command='python -c "import os; print(os.environ.get(\'FAKE_API_KEY\'))"')
     assert "super-secret" not in r.content and "None" in r.content
+
+
+def test_truncate_keeps_head_and_tail_and_says_so():
+    text = "HEAD" + "x" * 50_000 + "TAIL"
+    out = truncate(text, 1000)
+    assert out.startswith("HEAD") and out.endswith("TAIL")
+    assert "characters truncated" in out and len(out) < 1200

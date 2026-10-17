@@ -21,6 +21,20 @@ class FakeProvider:
         return self.responses.pop(0)
 
 
+class Flaky(FakeProvider):
+    """Raises a recoverable error `failures` times, then behaves normally."""
+
+    def __init__(self, responses, failures):
+        super().__init__(responses)
+        self.failures = failures
+
+    def complete(self, **kw):
+        if self.failures > 0:
+            self.failures -= 1
+            raise RuntimeError("400 tool_use_failed: Failed to call a function")
+        return super().complete(**kw)
+
+
 def resp(text="", calls=(), stop=None):
     calls = list(calls)
     return ModelResponse(text, calls, Usage(10, 5), stop or ("tool_use" if calls else "end_turn"))
@@ -111,3 +125,43 @@ def test_trace_file_has_expected_events(tmp_path):
     tracer.close()
     events = [json.loads(line)["event"] for line in trace.read_text(encoding="utf-8").splitlines()]
     assert events == ["run_start", "model_response", "run_end"]
+
+def test_recoverable_provider_error_is_retried(tmp_path):
+    events = []
+    agent = Agent(
+        Flaky([resp("ok")], failures=2), ToolRegistry(default_tools()), tmp_path,
+        on_event=lambda e, d: events.append(e),
+    )
+    r = agent.run("x")
+    assert r.status == "completed" and r.turns == 1
+    assert events.count("provider_retry") == 2
+
+
+def test_provider_retries_are_limited(tmp_path):
+    agent = Agent(Flaky([resp("ok")], failures=5), ToolRegistry(default_tools()), tmp_path)
+    r = agent.run("x")
+    assert r.status == "error" and "tool_use_failed" in r.error
+
+
+def test_unrecoverable_error_is_not_retried(tmp_path):
+    class BadKey(FakeProvider):
+        n = 0
+
+        def complete(self, **kw):
+            BadKey.n += 1
+            raise RuntimeError("401 invalid api key")
+
+    r = Agent(BadKey([]), ToolRegistry(default_tools()), tmp_path).run("x")
+    assert r.status == "error" and BadKey.n == 1
+
+
+def test_repeated_identical_failure_gets_a_warning(tmp_path):
+    def bad(i):
+        return resp(calls=[ToolCall(str(i), "read_file", {"path": "nope.txt"})])
+
+    p, agent = make(tmp_path, [bad(1), bad(2), bad(3), resp("ok")])
+    agent.run("x")
+    first = p.calls[1][-1].tool_results[0]
+    third = p.calls[3][-1].tool_results[0]
+    assert "identical" not in first.content
+    assert "identical" in third.content
