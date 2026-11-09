@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.cli import build_parser, check_workdir, format_summary
+from harness.cli import build_parser, check_workdir, default_provider, format_summary
 from harness.loop import RunResult
 from harness.types import Usage
 
@@ -23,9 +23,20 @@ def test_missing_workdir_is_refused(tmp_path):
         check_workdir(tmp_path / "does-not-exist", force=False)
 
 
-def test_parser_defaults():
+def test_parser_defaults(monkeypatch):
+    for var in ("HARNESS_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
     a = build_parser().parse_args(["fix it"])
     assert a.task == "fix it" and a.provider == "anthropic" and a.max_turns == 40
+
+
+def test_default_provider_follows_available_key(monkeypatch):
+    for var in ("HARNESS_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    assert default_provider() == "groq"
+    monkeypatch.setenv("HARNESS_PROVIDER", "openai")
+    assert default_provider() == "openai"
 
 
 def test_summary_reports_unknown_cost():

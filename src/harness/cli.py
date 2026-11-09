@@ -15,10 +15,20 @@ from .tools import ToolRegistry, default_tools
 from .trace import Tracer
 
 
+def default_provider() -> str:
+    """HARNESS_PROVIDER if set; otherwise the first provider that has an API key."""
+    chosen = os.environ.get("HARNESS_PROVIDER")
+    if chosen in PROVIDER_NAMES:
+        return chosen
+    for name in PROVIDER_NAMES:
+        if os.environ.get(f"{name.upper()}_API_KEY"):
+            return name
+    return "anthropic"
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="harness", description="Minimal coding-agent harness")
     ap.add_argument("task", help="what the agent should do (put it in quotes)")
-    ap.add_argument("--provider", default="anthropic", choices=PROVIDER_NAMES)
+    ap.add_argument("--provider", default=default_provider(), choices=PROVIDER_NAMES)
     ap.add_argument("--model", help="defaults to <PROVIDER>_MODEL from .env")
     ap.add_argument("--workdir", default=".", help="folder the agent works in")
     ap.add_argument("--max-turns", type=int, default=40)
@@ -92,10 +102,11 @@ def format_summary(result: RunResult, trace_path: Path) -> str:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
-
     load_dotenv(find_dotenv(usecwd=True))  # a .env in the folder you run from
     load_dotenv()                          # fallback: the project's own .env
+    
+    args = build_parser().parse_args()
+
     for stream in (sys.stdout, sys.stderr):  # Windows consoles choke on some characters
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
