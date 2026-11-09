@@ -51,21 +51,28 @@ def _write_file(args: dict, ctx: ToolContext) -> str:
     if path.is_dir():
         raise ToolError(f"{args['path']} is a directory.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = args["content"]
-    path.write_text(content, encoding="utf-8")
-    return f"Wrote {len(content.encode('utf-8'))} bytes to {args['path']}"
+    data = args["content"].encode("utf-8")
+    path.write_bytes(data)  # bytes: no newline translation on any OS
+    return f"Wrote {len(data)} bytes to {args['path']}"
 
 
 def _edit_file(args: dict, ctx: ToolContext) -> str:
     path = ctx.resolve(args["path"])
     if not path.is_file():
         raise ToolError(f"File not found: {args['path']}")
-    old, new = args["old_string"], args["new_string"]
+    # The model always writes "\n". Match using "\n", then restore the file's own endings.
+    old = args["old_string"].replace("\r\n", "\n")
+    new = args["new_string"].replace("\r\n", "\n")
     if old == "":
         raise ToolError("old_string must not be empty. Use write_file to create files.")
     if old == new:
         raise ToolError("old_string and new_string are identical.")
-    text = path.read_text(encoding="utf-8")
+    try:
+        raw = path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        raise ToolError(f"{args['path']} is not valid UTF-8 text.") from None
+    uses_crlf = "\r\n" in raw
+    text = raw.replace("\r\n", "\n")
     count = text.count(old)
     if count == 0:
         raise ToolError(
@@ -77,7 +84,10 @@ def _edit_file(args: dict, ctx: ToolContext) -> str:
             f"old_string appears {count} times. Include more surrounding context to make it "
             "unique, or set replace_all=true."
         )
-    path.write_text(text.replace(old, new), encoding="utf-8")
+    updated = text.replace(old, new)
+    if uses_crlf:
+        updated = updated.replace("\n", "\r\n")
+    path.write_bytes(updated.encode("utf-8"))
     return f"Edited {args['path']} ({count} replacement{'s' if count > 1 else ''})."
 
 

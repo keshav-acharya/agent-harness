@@ -100,3 +100,24 @@ def test_bash_rejects_line_breaks_on_windows(env, monkeypatch):
     monkeypatch.setattr("harness.tools.shell.IS_WINDOWS", True)
     r = call("bash", command="echo one\necho two")
     assert r.is_error and "line break" in r.content
+
+def test_write_file_does_not_translate_newlines(env):
+    call, root = env
+    call("write_file", path="n.txt", content="a\nb\n")
+    assert (root / "n.txt").read_bytes() == b"a\nb\n"
+
+
+def test_edit_preserves_crlf_line_endings(env):
+    call, root = env
+    (root / "w.txt").write_bytes(b"a = 1\r\nb = 2\r\n")
+    r = call("edit_file", path="w.txt", old_string="a = 1", new_string="a = 9")
+    assert not r.is_error
+    assert (root / "w.txt").read_bytes() == b"a = 9\r\nb = 2\r\n"
+
+
+def test_multiline_edit_matches_a_crlf_file(env):
+    call, root = env
+    (root / "m.txt").write_bytes(b"x\r\ny\r\n")
+    r = call("edit_file", path="m.txt", old_string="x\ny", new_string="z")
+    assert not r.is_error
+    assert (root / "m.txt").read_bytes() == b"z\r\n"
