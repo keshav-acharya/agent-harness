@@ -1,0 +1,19 @@
+[
+  {
+    "provider": "groq",
+    "model": "qwen/qwen3.8-27b",
+    "task": "fix_bug",
+    "passed": true,
+    "status": "completed",
+    "turns": 5,
+    "input_tokens": 6872,
+    "output_tokens": 285,
+    "cache_read_tokens": 0,
+    "cost_usd": null,
+    "wall_s": 6.4,
+    "error": null,
+    "trace": "traces\\cmp-groq-fix_bug-cmp-fix_bug-vgg49egk.jsonl",
+    "retries": 1,
+    "retry_wait_s": 2.0
+  }
+]
