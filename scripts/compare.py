@@ -180,8 +180,15 @@ def run_one(provider_name: str, task_name: str, max_turns: int) -> dict:
     provider = make_provider(provider_name)
     trace = Path("traces") / f"cmp-{provider_name}-{task_name}-{work.name}.jsonl"
     tracer = Tracer(trace, work.name)
+    waits: list[float] = []
+
+    def on_event(event: str, data: dict) -> None:
+        if event == "transient_retry":
+            waits.append(data["wait_s"])
+
     agent = Agent(
-        provider, ToolRegistry(default_tools()), work, Limits(max_turns=max_turns), tracer
+        provider, ToolRegistry(default_tools()), work, Limits(max_turns=max_turns), tracer,
+        on_event,
     )
     result = agent.run(prompt)
     tracer.close()
@@ -198,6 +205,7 @@ def run_one(provider_name: str, task_name: str, max_turns: int) -> dict:
         "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
         "cache_read_tokens": u.cache_read_tokens, "cost_usd": result.cost_usd,
         "wall_s": round(result.wall_s, 1), "error": result.error, "trace": str(trace),
+        "retries": len(waits), "retry_wait_s": round(sum(waits), 1),
     }
 
 
@@ -223,17 +231,17 @@ def main() -> None:
                     print(f"  CRASHED: {type(e).__name__}: {e}")
                     rows.append({
                         "provider": provider_name, "task": task_name, "passed": False,
-                        "status": "crash", "turns": 0, "input_tokens": 0, "output_tokens": 0,
+                        "status": "crash", "turns": 0, "input_tokens": 0, "output_tokens": 0, "retries": 0, "retry_wait_s": 0.0,
                         "cost_usd": None, "wall_s": 0.0, "error": str(e),
                     })
 
     print(f"\n{'provider':<10} {'task':<10} {'pass':<5} {'status':<10} {'turns':>5} "
-          f"{'in':>8} {'out':>6} {'cost':>9} {'secs':>6}")
+        f"{'in':>8} {'out':>6} {'cost':>9} {'secs':>6} {'waits':>6}")
     for r in rows:
         cost = "?" if r["cost_usd"] is None else f"${r['cost_usd']:.4f}"
         print(f"{r['provider']:<10} {r['task']:<10} {'YES' if r['passed'] else 'no':<5} "
               f"{r['status']:<10} {r['turns']:>5} {r['input_tokens']:>8} "
-              f"{r['output_tokens']:>6} {cost:>9} {r['wall_s']:>6}")
+              f"{r['output_tokens']:>6} {cost:>9} {r['wall_s']:>6} {r['retry_wait_s']:>6}")
 
     print()
     for name in args.providers:

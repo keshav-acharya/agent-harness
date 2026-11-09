@@ -16,3 +16,13 @@ def test_summarize_reads_a_trace(tmp_path):
     t.close()
     out = summarize(path)
     assert "glob (ERR)" in out and "status=completed" in out and "cost=unknown" in out
+
+def test_summarize_reports_waits(tmp_path):
+    path = tmp_path / "t.jsonl"
+    t = Tracer(path, "r")
+    t.emit("run_start", task="demo", provider="fake", model="m")
+    t.emit("transient_retry", turn=1, attempt=1, wait_s=4.0, error="429")
+    t.emit("run_end", status="completed", turns=0, cost_usd=None, wall_s=1.0,
+           error=None, usage=USAGE)
+    t.close()
+    assert "1 (4s waited in total)" in summarize(path)

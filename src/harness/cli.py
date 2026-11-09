@@ -63,6 +63,8 @@ def make_printer(color: bool):
             print(f"   {mark} {(first[0] if first else '')[:100]}")
         elif event == "provider_retry":
             print(paint("33", f"   model error, retrying (attempt {d['attempt']})"))
+        elif event == "transient_retry":
+            print(paint("33", f"   rate limit or network error, waiting {d['wait_s']:.0f}s"))
 
     return on_event
 

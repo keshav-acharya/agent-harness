@@ -45,11 +45,19 @@ def summarize(path: Path) -> str:
     all_results = [e for e in events if e["event"] == "tool_result"]
     if all_results:
         big = max(all_results, key=lambda e: len(e["content"]))
-        out.append(f"\nlargest tool result: {big['name']}, {len(big['content'])} chars (turn {big['turn']})")
+        out.append(
+            f"\nlargest tool result: {big['name']}, {len(big['content'])} chars "
+            f"(turn {big['turn']})"
+        )
 
     retries = sum(1 for e in events if e["event"] == "provider_retry")
     if retries:
         out.append(f"provider retries: {retries}")
+
+    waits = [e for e in events if e["event"] == "transient_retry"]
+    if waits:
+        total = sum(e["wait_s"] for e in waits)
+        out.append(f"rate-limit/network waits: {len(waits)} ({total:.0f}s waited in total)")
 
     end = next((e for e in reversed(events) if e["event"] == "run_end"), None)
     if end:

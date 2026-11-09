@@ -16,7 +16,16 @@ from .types import Message, ModelResponse, ToolCall, ToolResult, Usage
 
 # Error text that means "the model produced a bad generation", not "your request is wrong".
 RECOVERABLE_MARKERS = ("tool_use_failed", "failed_generation", "Failed to call a function")
+
+# Error class names (the same in the Anthropic, OpenAI and Groq SDKs): wait and retry.
+TRANSIENT_NAMES = (
+    "RateLimitError",
+    "InternalServerError",
+    "APIConnectionError",
+    "APITimeoutError",
+)
 REPEAT_FAILURE_WARN_AT = 3
+MAX_WAIT_S = 60.0  # never sleep longer than this for a single retry
 
 
 def _is_recoverable(e: Exception) -> bool:
@@ -24,13 +33,29 @@ def _is_recoverable(e: Exception) -> bool:
     return any(marker in text for marker in RECOVERABLE_MARKERS)
 
 
+def _is_transient(e: Exception) -> bool:
+    return type(e).__name__ in TRANSIENT_NAMES
+
+
+def _retry_after_s(e: Exception) -> float | None:
+    """Seconds the server asked us to wait (Retry-After header), if it sent one."""
+    headers = getattr(getattr(e, "response", None), "headers", None)
+    if headers is None:
+        return None
+    try:
+        return float(headers.get("retry-after"))
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class Limits:
     max_turns: int = 40
-    max_cost_usd: float = 2.0        # enforced only if the model has a price in pricing.py
+    max_cost_usd: float = 2.0         # enforced only if the model has a price in pricing.py
     max_wall_s: float = 900.0
-    max_output_tokens: int = 8192    # per model call
-    max_provider_retries: int = 2    # retries per turn for flaky-generation errors
+    max_output_tokens: int = 8192     # per model call
+    max_provider_retries: int = 2     # retries per turn for bad generations
+    max_transient_retries: int = 6    # waits per turn for rate limits / network errors
 
 
 @dataclass
@@ -62,6 +87,7 @@ class Agent:
         self.tracer = tracer or Tracer(None)
         self.on_event = on_event
         self.system = build_system_prompt(self.ctx.root)
+        self._sleep: Callable[[float], None] = time.sleep  # tests replace this
 
     def _emit(self, event: str, **data) -> None:
         self.tracer.emit(event, **data)
@@ -72,21 +98,37 @@ class Agent:
         self, messages: list[Message], turn: int
     ) -> tuple[ModelResponse | None, str | None]:
         """Returns (response, None) on success or (None, error_text) on failure."""
-        attempt = 0
+        lim = self.limits
+        flaky = 0       # bad generations retried so far this turn
+        transient = 0   # rate limits / network errors waited out so far this turn
         while True:
             try:
                 resp = self.provider.complete(
                     system=self.system,
                     messages=messages,
                     tools=self.registry.tools,
-                    max_tokens=self.limits.max_output_tokens,
+                    max_tokens=lim.max_output_tokens,
                 )
                 return resp, None
             except Exception as e:  # noqa: BLE001 - any API failure must end the run cleanly
                 err = f"{type(e).__name__}: {e}"
-                if _is_recoverable(e) and attempt < self.limits.max_provider_retries:
-                    attempt += 1
-                    self._emit("provider_retry", turn=turn, attempt=attempt, error=err)
+                if _is_recoverable(e) and flaky < lim.max_provider_retries:
+                    flaky += 1
+                    self._emit("provider_retry", turn=turn, attempt=flaky, error=err)
+                    continue
+                if _is_transient(e) and transient < lim.max_transient_retries:
+                    wait = _retry_after_s(e)
+                    if wait is None:
+                        wait = min(2.0 ** (transient + 1), 30.0)  # 2, 4, 8, 16, 30, 30
+                    if wait > MAX_WAIT_S:
+                        # e.g. a daily limit: waiting would just burn time, so stop clearly
+                        return None, f"{err} [server asked for a {wait:.0f}s wait; cap is {MAX_WAIT_S:.0f}s]"
+                    transient += 1
+                    self._emit(
+                        "transient_retry", turn=turn, attempt=transient,
+                        wait_s=wait, error=err[:300],
+                    )
+                    self._sleep(wait)
                     continue
                 return None, err
 

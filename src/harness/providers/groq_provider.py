@@ -9,4 +9,4 @@ class GroqProvider(ChatCompletionsProvider):
     name = "groq"
 
     def __init__(self, model: str, client: Groq | None = None):
-        super().__init__(model, client if client is not None else Groq(max_retries=5))
+        super().__init__(model, client if client is not None else Groq(max_retries=0))

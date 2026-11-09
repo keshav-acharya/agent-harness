@@ -9,4 +9,4 @@ class OpenAIProvider(ChatCompletionsProvider):
     name = "openai"
 
     def __init__(self, model: str, client: openai.OpenAI | None = None):
-        super().__init__(model, client if client is not None else openai.OpenAI(max_retries=5))
+        super().__init__(model, client if client is not None else openai.OpenAI(max_retries=0))

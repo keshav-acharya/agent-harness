@@ -16,7 +16,7 @@ class AnthropicProvider:
     def __init__(self, model: str, client: anthropic.Anthropic | None = None):
         self.model = model
         # The SDK retries 429 / 5xx / connection errors with exponential backoff.
-        self.client = client if client is not None else anthropic.Anthropic(max_retries=5)
+        self.client = client if client is not None else anthropic.Anthropic(max_retries=0)
 
     @staticmethod
     def _to_wire(messages: list[Message]) -> list[dict]:

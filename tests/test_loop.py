@@ -1,4 +1,7 @@
+
+
 import json
+from types import SimpleNamespace
 
 from harness import pricing
 from harness.loop import Agent, Limits
@@ -165,3 +168,54 @@ def test_repeated_identical_failure_gets_a_warning(tmp_path):
     third = p.calls[3][-1].tool_results[0]
     assert "identical" not in first.content
     assert "identical" in third.content
+
+class RateLimitError(Exception):
+    """Same class name as the SDKs' error, which is how the loop recognises it."""
+
+    def __init__(self, msg, retry_after=None):
+        super().__init__(msg)
+        if retry_after is not None:
+            self.response = SimpleNamespace(headers={"retry-after": str(retry_after)})
+
+
+class Throttled(FakeProvider):
+    def __init__(self, responses, failures, retry_after=None):
+        super().__init__(responses)
+        self.failures, self.retry_after = failures, retry_after
+
+    def complete(self, **kw):
+        if self.failures > 0:
+            self.failures -= 1
+            raise RateLimitError("429 rate limited", self.retry_after)
+        return super().complete(**kw)
+
+
+def _throttled_run(tmp_path, **kw):
+    events, slept = [], []
+    agent = Agent(
+        Throttled([resp("ok")], **kw), ToolRegistry(default_tools()), tmp_path,
+        on_event=lambda e, d: events.append((e, d)),
+    )
+    agent._sleep = slept.append  # record instead of really sleeping
+    return agent.run("x"), events, slept
+
+
+def test_rate_limit_backs_off_and_is_traced(tmp_path):
+    r, events, slept = _throttled_run(tmp_path, failures=2)
+    assert r.status == "completed" and slept == [2.0, 4.0]
+    assert [e for e, _ in events].count("transient_retry") == 2
+
+
+def test_server_retry_after_is_respected(tmp_path):
+    r, _, slept = _throttled_run(tmp_path, failures=1, retry_after=7)
+    assert r.status == "completed" and slept == [7.0]
+
+
+def test_huge_retry_after_stops_instead_of_waiting(tmp_path):
+    r, _, slept = _throttled_run(tmp_path, failures=1, retry_after=3600)
+    assert r.status == "error" and "cap is" in r.error and slept == []
+
+
+def test_rate_limit_retries_are_capped(tmp_path):
+    r, _, slept = _throttled_run(tmp_path, failures=99)
+    assert r.status == "error" and len(slept) == 6
