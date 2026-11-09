@@ -18,5 +18,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/harness"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 100
+extend-exclude = ["scratch"]

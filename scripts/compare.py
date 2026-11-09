@@ -89,6 +89,85 @@ def test_old_name_is_gone():
                     "project, then run the tests."
         ),
     ),
+        "add_flag": (
+        {
+            "greet.py": '''import sys
+
+
+def main():
+    name = sys.argv[1] if len(sys.argv) > 1 else "world"
+    print(f"Hello, {name}!")
+
+
+if __name__ == "__main__":
+    main()
+''',
+            "README.md": "# greet\n\nUsage:\n\n    python greet.py [NAME]\n",
+            "test_greet.py": '''import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).parent
+
+
+def run(*args):
+    cmd = [sys.executable, str(HERE / "greet.py"), *args]
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+
+def test_default_behaviour_unchanged():
+    assert run().stdout.strip() == "Hello, world!"
+    assert run("Bob").stdout.strip() == "Hello, Bob!"
+
+
+def test_shout_flag_works_before_or_after_the_name():
+    assert run("Bob", "--shout").stdout.strip() == "HELLO, BOB!"
+    assert run("--shout", "Bob").stdout.strip() == "HELLO, BOB!"
+    assert run("--shout").stdout.strip() == "HELLO, WORLD!"
+
+
+def test_readme_documents_the_flag():
+    assert "--shout" in (HERE / "README.md").read_text()
+''',
+        },
+        (
+            "Add a --shout flag to greet.py that prints the greeting in upper case. "
+            "Use argparse so the flag works before or after the name. Document the flag "
+            "in README.md, then run the tests."
+        ),
+    ),
+    "ambiguous": (
+        {
+            "stats.py": '''def find_duplicates(items):
+    """Return the sorted list of values that appear more than once."""
+    dups = []
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            if items[i] == items[j] and items[i] not in dups:
+                dups.append(items[i])
+    return sorted(dups)
+''',
+            "test_stats.py": '''from stats import find_duplicates
+
+
+def test_basic():
+    assert find_duplicates([1, 2, 2, 3, 3, 3]) == [2, 3]
+
+
+def test_no_duplicates():
+    assert find_duplicates([1, 2, 3]) == []
+
+
+def test_empty():
+    assert find_duplicates([]) == []
+
+
+def test_strings():
+    assert find_duplicates(["b", "a", "b"]) == ["b"]
+''',
+        },
+        "Make this code faster.",
+    ),
 }
 
 

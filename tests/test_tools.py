@@ -88,3 +88,15 @@ def test_truncate_keeps_head_and_tail_and_says_so():
     out = truncate(text, 1000)
     assert out.startswith("HEAD") and out.endswith("TAIL")
     assert "characters truncated" in out and len(out) < 1200
+
+def test_bash_labels_empty_output(env):
+    call, _ = env
+    r = call("bash", command='python -c "pass"')
+    assert "[no output]" in r.content and "[exit code 0]" in r.content
+
+
+def test_bash_rejects_line_breaks_on_windows(env, monkeypatch):
+    call, _ = env
+    monkeypatch.setattr("harness.tools.shell.IS_WINDOWS", True)
+    r = call("bash", command="echo one\necho two")
+    assert r.is_error and "line break" in r.content
