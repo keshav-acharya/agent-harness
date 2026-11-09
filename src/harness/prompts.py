@@ -16,12 +16,17 @@ Rules:
 - Do not ask the user questions. Make reasonable assumptions and state them in your summary.
 """
 
+_WINDOWS_SHELL = (
+    "cmd.exe (use 'dir' and 'type', not 'ls' and 'cat'; run Python as 'python'; commands "
+    "must be a single line, so for multi-line Python write a .py file with write_file "
+    "and run it)"
+)
 
-def build_system_prompt(root: Path) -> str:
-    if sys.platform == "win32":
-        platform = "Windows"
-        shell = "cmd.exe (use 'dir' and 'type', not 'ls' and 'cat'; run Python as 'python')"
+
+def build_system_prompt(root: Path, os_name: str | None = None) -> str:
+    os_name = os_name or sys.platform
+    if os_name == "win32":
+        platform, shell = "Windows", _WINDOWS_SHELL
     else:
-        platform = sys.platform
-        shell = "sh"
+        platform, shell = os_name, "sh"
     return _TEMPLATE.format(root=root, platform=platform, shell=shell)
